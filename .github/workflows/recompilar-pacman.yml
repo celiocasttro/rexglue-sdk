@@ -1,79 +1,156 @@
 
-name: Recompilar Pacman para Motorola Edge 30 Pro
+name: Recompilar Pac-Man para Android
 
 on:
-  workflow_dispatch: # Inicia pelo botao manual no celular
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  build-motorola:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
 
     steps:
-    - name: Clonar Repositorio
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
+      - name: Baixar repositorio
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-    - name: Instalar Dependencias Linux
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          cmake \
-          ninja-build \
-          clang \
-          libtinfo-dev \
-          zlib1g-dev \
-          libx11-xcb-dev \
-          libx11-dev \
-          libxcb1-dev \
-          libgtk-3-dev \
-          libxss-dev
+      - name: Instalar dependencias
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            clang \
+            lld \
+            git \
+            pkg-config \
+            python3 \
+            unzip \
+            zip
 
-    # 1. Compila o nucleo do tradutor
-    - name: Compilar o Toolkit do ReXGlue
-      run: |
-        mkdir -p build_sdk && cd build_sdk
-        cmake -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_C_COMPILER=clang \
-              -DCMAKE_CXX_COMPILER=clang++ \
-              -DZLIB_USE_STATIC_LIBS=ON \
-              -DREXGLUE_BUILD_TOOLS=OFF \
-              -DSDL_X11=OFF \
-              -DSDL_WAYLAND=OFF \
-              -DSDL_VIDEO=OFF \
-              -DSDL_DISABLE_INSTALL=ON ..
-        cmake --build . --target rexglue --parallel $(nproc)
-        mv bin/rexglue ../
-        cd ..
+      - name: Verificar ambiente
+        run: |
+          echo "=== CMake ==="
+          cmake --version
 
-    # 2. Inicializa o projeto do Pacman
-    - name: Inicializar Projeto do Pacman
-      run: |
-        ./rexglue init --project-name pacman_colors --xex-path default.xex --game-root ./ --project-root ./pacman_project
+          echo "=== Ninja ==="
+          ninja --version
 
-    # 3. Traduz o arquivo XEX para codigo C++
-    - name: Traduzir Logica do Jogo
-      run: |
-        cd pacman_project
-        ../rexglue codegen
+          echo "=== Clang ==="
+          clang --version
 
-    # 4. Tenta compilar para Android ARM64
-    - name: Compilar APK Nativo ARM64 (Vulkan)
-      run: |
-        cd pacman_project
-        mkdir -p build_android && cd build_android
-        cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake \
-              -DANDROID_ABI=arm64-v8a \
-              -DANDROID_PLATFORM=android-31 \
-              -DANDROID_STL=c++_static \
-              -DUSE_VULKAN=ON ..
-        make
+          echo "=== Arquivos do projeto ==="
+          test -f CMakeLists.txt
+          test -f CMakePresets.json
+          test -f default.xex
 
-    # 5. Publica os arquivos gerados
-    - name: Entregar Aplicativo
-      uses: actions/upload-artifact@v4
-      with:
-        name: pacman-edge30pro-vulkan
-        path: pacman_project/build_android/outputs/
-        
+          echo "default.xex encontrado."
+          echo "=== Presets disponíveis ==="
+          cmake --list-presets
+
+      - name: Configurar SDK ReXGlue
+        run: cmake --preset linux-amd64
+
+      - name: Compilar e instalar SDK ReXGlue
+        run: |
+          cmake --build \
+            --preset linux-amd64-release \
+            --target install
+
+      - name: Localizar executavel ReXGlue
+        id: rexglue
+        run: |
+          echo "=== Procurando executavel ==="
+
+          find out/install out/build \
+            -type f -name rexglue -perm /111 \
+            -print 2>/dev/null || true
+
+          REXGLUE_BIN="$(find out/install out/build \
+            -type f -name rexglue -perm /111 \
+            -print -quit 2>/dev/null || true)"
+
+          if [ -z "$REXGLUE_BIN" ]; then
+            echo "::error::Executavel rexglue nao encontrado."
+            echo "Verifique os logs da compilacao e instalacao."
+            exit 1
+          fi
+
+          echo "REXGLUE_BIN=$GITHUB_WORKSPACE/$REXGLUE_BIN" \
+            >> "$GITHUB_ENV"
+
+          "$GITHUB_WORKSPACE/$REXGLUE_BIN" --help
+
+      - name: Inicializar projeto Pac-Man
+        run: |
+          mkdir -p pacman_project
+
+          "$REXGLUE_BIN" init \
+            --project-name pacman_colors \
+            --xex-path "$GITHUB_WORKSPACE/default.xex" \
+            --game-root "$GITHUB_WORKSPACE" \
+            --project-root "$GITHUB_WORKSPACE/pacman_project"
+
+      - name: Verificar arquivos gerados
+        run: |
+          echo "=== Arquivos do projeto Pac-Man ==="
+          find pacman_project -maxdepth 4 -type f \
+            -print | sort
+
+          echo "=== Procurando configuracao TOML ==="
+          find pacman_project -type f \
+            -name '*.toml' -print
+
+      - name: Gerar codigo do Pac-Man
+        working-directory: pacman_project
+        run: |
+          CONFIG="$(find . -type f -name '*.toml' \
+            ! -path './build*/*' -print -quit)"
+
+          if [ -z "$CONFIG" ]; then
+            echo "::error::Nenhum arquivo TOML encontrado."
+            exit 1
+          fi
+
+          echo "Configuracao encontrada: $CONFIG"
+          "$REXGLUE_BIN" codegen "$CONFIG"
+
+      - name: Preparar Android NDK
+        run: |
+          echo "ANDROID_NDK_LATEST_HOME=$ANDROID_NDK_LATEST_HOME"
+          test -f \
+            "$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake"
+
+      - name: Verificar suporte de compilacao Android
+        run: |
+          echo "=== CMakeLists do projeto gerado ==="
+          if [ -f pacman_project/CMakeLists.txt ]; then
+            cat pacman_project/CMakeLists.txt
+          else
+            echo "::error::CMakeLists.txt do projeto nao encontrado."
+            exit 1
+          fi
+
+          echo "=== Verificar suporte Vulkan ==="
+          grep -R -n -i 'vulkan\|ANDROID_ABI\|android.toolchain' \
+            pacman_project \
+            --include='CMakeLists.txt' \
+            --include='*.cmake' \
+            --include='*.mk' || true
+
+      - name: Salvar arquivos de diagnostico
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostico-pacman
+          path: |
+            pacman_project/
+            out/
+          if-no-files-found: ignore
+          retention-days: 7
+          
