@@ -44,13 +44,14 @@ jobs:
           echo "=== Clang ==="
           clang --version
 
-          echo "=== Arquivos do projeto ==="
+          echo "=== Verificar arquivos obrigatorios ==="
           test -f CMakeLists.txt
           test -f CMakePresets.json
           test -f default.xex
 
           echo "default.xex encontrado."
-          echo "=== Presets disponíveis ==="
+
+          echo "=== Presets disponiveis ==="
           cmake --list-presets
 
       - name: Configurar SDK ReXGlue
@@ -63,28 +64,33 @@ jobs:
             --target install
 
       - name: Localizar executavel ReXGlue
-        id: rexglue
         run: |
-          echo "=== Procurando executavel ==="
+          echo "=== Procurando o executavel ==="
 
-          find out/install out/build \
-            -type f -name rexglue -perm /111 \
-            -print 2>/dev/null || true
+          find out -type f -name rexglue \
+            -perm /111 -print || true
 
-          REXGLUE_BIN="$(find out/install out/build \
-            -type f -name rexglue -perm /111 \
-            -print -quit 2>/dev/null || true)"
+          if [ -x "out/linux-amd64/Release/rexglue" ]; then
+            REXGLUE_BIN="$GITHUB_WORKSPACE/out/linux-amd64/Release/rexglue"
+          elif [ -x "out/linux-amd64/rexglue" ]; then
+            REXGLUE_BIN="$GITHUB_WORKSPACE/out/linux-amd64/rexglue"
+          else
+            REXGLUE_REL="$(find out -type f \
+              -name rexglue -perm /111 \
+              -print -quit 2>/dev/null || true)"
 
-          if [ -z "$REXGLUE_BIN" ]; then
-            echo "::error::Executavel rexglue nao encontrado."
-            echo "Verifique os logs da compilacao e instalacao."
-            exit 1
+            if [ -z "$REXGLUE_REL" ]; then
+              echo "::error::Executavel rexglue nao encontrado."
+              exit 1
+            fi
+
+            REXGLUE_BIN="$GITHUB_WORKSPACE/$REXGLUE_REL"
           fi
 
-          echo "REXGLUE_BIN=$GITHUB_WORKSPACE/$REXGLUE_BIN" \
-            >> "$GITHUB_ENV"
+          echo "REXGLUE_BIN=$REXGLUE_BIN" >> "$GITHUB_ENV"
 
-          "$GITHUB_WORKSPACE/$REXGLUE_BIN" --help
+          echo "=== Versao e ajuda do ReXGlue ==="
+          "$REXGLUE_BIN" --help
 
       - name: Inicializar projeto Pac-Man
         run: |
@@ -98,13 +104,11 @@ jobs:
 
       - name: Verificar arquivos gerados
         run: |
-          echo "=== Arquivos do projeto Pac-Man ==="
-          find pacman_project -maxdepth 4 -type f \
-            -print | sort
+          echo "=== Arquivos do projeto ==="
+          find pacman_project -maxdepth 4 -type f -print | sort
 
-          echo "=== Procurando configuracao TOML ==="
-          find pacman_project -type f \
-            -name '*.toml' -print
+          echo "=== Arquivos TOML ==="
+          find pacman_project -type f -name '*.toml' -print
 
       - name: Gerar codigo do Pac-Man
         working-directory: pacman_project
@@ -120,30 +124,37 @@ jobs:
           echo "Configuracao encontrada: $CONFIG"
           "$REXGLUE_BIN" codegen "$CONFIG"
 
-      - name: Preparar Android NDK
+      - name: Verificar Android NDK
         run: |
-          echo "ANDROID_NDK_LATEST_HOME=$ANDROID_NDK_LATEST_HOME"
+          if [ -z "$ANDROID_NDK_LATEST_HOME" ]; then
+            echo "::error::ANDROID_NDK_LATEST_HOME nao esta definido."
+            exit 1
+          fi
+
           test -f \
             "$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake"
 
-      - name: Verificar suporte de compilacao Android
+          echo "Android NDK encontrado."
+
+      - name: Verificar configuracao Android do projeto
         run: |
-          echo "=== CMakeLists do projeto gerado ==="
-          if [ -f pacman_project/CMakeLists.txt ]; then
-            cat pacman_project/CMakeLists.txt
-          else
+          if [ ! -f pacman_project/CMakeLists.txt ]; then
             echo "::error::CMakeLists.txt do projeto nao encontrado."
             exit 1
           fi
 
-          echo "=== Verificar suporte Vulkan ==="
-          grep -R -n -i 'vulkan\|ANDROID_ABI\|android.toolchain' \
+          echo "=== CMakeLists.txt do projeto ==="
+          cat pacman_project/CMakeLists.txt
+
+          echo "=== Referencias a Android e Vulkan ==="
+          grep -R -n -i \
+            'vulkan\|ANDROID_ABI\|android.toolchain' \
             pacman_project \
             --include='CMakeLists.txt' \
             --include='*.cmake' \
             --include='*.mk' || true
 
-      - name: Salvar arquivos de diagnostico
+      - name: Salvar diagnosticos
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -153,4 +164,3 @@ jobs:
             out/
           if-no-files-found: ignore
           retention-days: 7
-          
