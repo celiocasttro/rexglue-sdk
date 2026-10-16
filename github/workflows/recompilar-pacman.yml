@@ -1,42 +1,75 @@
-name: Recompilar Pacman Colors Xbox 360
+name: Recompilar Pac-Man para Android
 
 on:
-  workflow_dispatch: # Inicia pelo botão no celular
+workflow_dispatch:
+
+permissions:
+contents: read
 
 jobs:
-  build-android:
-    runs-runs-on: ubuntu-latest
+diagnostico:
+name: Verificar projeto ReXGlue
+runs-on: ubuntu-latest
 
-    steps:
-    - name: Clonar Repositorio
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
-
-    - name: Configurar Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-
-    - name: Configurar Android NDK
-      uses: android-actions/setup-android@v3
-      
-    - name: Traduzir Executavel (.XEX para C++)
-      run: |
-        python3 roteiros/codegen.py --input default.xex --output src/codegen_out/
-        echo "Código de Xbox 360 traduzido com sucesso!"
-
-    - name: Compilar APK Android
-      run: |
-        cd cmake
-        cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake \
-              -DANDROID_ABI=arm64-v8a \
-              -DANDROID_PLATFORM=android-26 \
-              ..
-        make
-
-    - name: Upload do APK Pronto
-      uses: actions/upload-artifact@v4
-      with:
-        name: pacman-colors-android
-        path: build/outputs/
+steps:
+  - name: Baixar repositorio
+    uses: actions/checkout@v4
+    with:
+      submodules: recursive
+  - name: Instalar ferramentas
+    run: |
+      sudo apt-get update
+      sudo apt-get install -y cmake ninja-build clang lld git python3
+  - name: Configurar Java
+    uses: actions/setup-java@v4
+    with:
+      distribution: temurin
+      java-version: '17'
+  - name: Configurar Android SDK
+    uses: android-actions/setup-android@v3
+  - name: Verificar ferramentas
+    run: |
+      echo "=== CMake ==="
+      cmake --version
+      echo "=== Ninja ==="
+      ninja --version
+      echo "=== Clang ==="
+      clang --version
+      echo "=== Java ==="
+      java -version
+      echo "=== Android SDK ==="
+      echo "ANDROID_HOME=$ANDROID_HOME"
+      echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+  - name: Verificar arquivos do projeto
+    run: |
+      echo "=== Arquivo principal ==="
+      test -f CMakeLists.txt && echo "CMakeLists.txt encontrado"
+      echo "=== Executaveis Xbox 360 ==="
+      find . -type f -iname '*.xex' -print
+      echo "=== Manifestos ReXGlue ==="
+      find . -type f -iname '*manifest*.toml' -print
+      echo "=== Scripts Python ==="
+      find . -type f -name '*.py' -print
+      echo "=== Configuracao Android ==="
+      find . -type f \( -name 'Android.mk' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print
+  - name: Verificar presets CMake
+    run: |
+      if [ -f CMakePresets.json ]; then
+        python3 -c '
+      import json
+      with open("CMakePresets.json", encoding="utf-8") as f:
+          data = json.load(f)
+      print("Presets encontrados:")
+      for preset in data.get("configurePresets", []):
+          print("-", preset.get("name", "(sem nome)"))
+      '
+      else
+        echo "CMakePresets.json nao encontrado"
+      fi
+  - name: Resultado
+    if: always()
+    run: |
+      echo "Diagnostico finalizado."
+      echo "Este workflow verifica os arquivos e as ferramentas."
+      echo "Ele ainda nao gera um APK."
+      echo "A recompilacao exige adaptar o ReXGlue para Android e ter os arquivos originais do jogo."
