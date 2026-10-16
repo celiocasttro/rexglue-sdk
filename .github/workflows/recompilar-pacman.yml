@@ -13,20 +13,38 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Configurar Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
+    - name: Instalar Dependencias Linux
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake ninja-build clang
 
+    # 1. PASSO ESSENCIAL: Compilar o próprio toolkit do ReXGlue em C++
+    - name: Compilar o Toolkit do ReXGlue
+      run: |
+        mkdir -p build_sdk && cd build_sdk
+        cmake -DCMAKE_BUILD_TYPE=Release ..
+        cmake --build . --target rexglue
+        # Move o executavel gerado para facilitar o acesso
+        mv bin/rexglue ../
+        cd ..
+
+    # 2. Inicializar o projeto para o Pacman criando o arquivo de configuracao inicial
+    - name: Inicializar Projeto do Jogo
+      run: |
+        ./rexglue init --project-name pacman_colors --xex-path default.xex --game-root ./ --project-root ./pacman_project
+
+    # 3. Rodar o motor do Codegen oficial para converter o default.xex do Pacman em C++
     - name: Traduzir Executavel (.XEX para C++)
       run: |
-        # Usando o caminho original correto em ingles exigido pelo sistema
-        python3 scripts/codegen.py --input default.xex --output src/codegen_out/
+        cd pacman_project
+        ../rexglue codegen
         echo "Codigo de Xbox 360 traduzido com sucesso!"
 
+    # 4. Compilar o resultado gerado usando o NDK nativo do Android
     - name: Compilar APK Android
       run: |
-        mkdir -p build && cd build
+        cd pacman_project
+        mkdir -p build_android && cd build_android
         cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake \
               -DANDROID_ABI=arm64-v8a \
               -DANDROID_PLATFORM=android-26 \
@@ -37,5 +55,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: pacman-colors-android
-        path: build/outputs/
-        
+        path: pacman_project/build_android/outputs/
