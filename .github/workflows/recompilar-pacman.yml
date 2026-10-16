@@ -1,51 +1,69 @@
-name: Recompilar Pacman Colors Xbox 360
+name: Recompilar Pacman para Motorola Edge 30 Pro
 
 on:
-  workflow_dispatch: # Ativa o botao manual no celular
+  workflow_dispatch: # Inicia pelo botao manual no celular
 
 jobs:
-  traduzir-xex:
+  build-motorola:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Clonar Repositorio do Pacman
+    - name: Clonar Repositorio
       uses: actions/checkout@v4
       with:
         submodules: recursive
 
-    - name: Instalar Dependencias do Linux
+    - name: Instalar Dependencias Linux
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential cmake ninja-build clang libtinfo-dev zlib1g-dev
 
-    # ETAPA 1: Compila a ferramenta do ReXGlue usando o Clang obrigatorio
-    - name: Compilar o Tradutor ReXGlue
+    # 1. Compila o nucleo do tradutor usando o Clang obrigatorio do ReXGlue
+    - name: Compilar o Toolkit do ReXGlue
       run: |
         mkdir -p build_sdk && cd build_sdk
         cmake -DCMAKE_BUILD_TYPE=Release \
               -DCMAKE_C_COMPILER=clang \
               -DCMAKE_CXX_COMPILER=clang++ \
               -DZLIB_USE_STATIC_LIBS=ON \
-              -DREXGLUE_BUILD_TOOLS=OFF ..
+              -DREXGLUE_BUILD_TOOLS=OFF \
+              -DSDL_X11=OFF \
+              -DSDL_WAYLAND=OFF \
+              -DSDL_VIDEO=OFF \
+              -DSDL_DISABLE_INSTALL=ON ..
         cmake --build . --target rexglue --parallel $(nproc)
         mv bin/rexglue ../
         cd ..
 
-    # ETAPA 2: Inicializa as pastas lógicas para o Pacman
-    - name: Inicializar Projeto do Jogo
+    # 2. Inicializa e mapeia o arquivo default.xex do Pacman que voce enviou
+    - name: Inicializar Projeto do Pacman
       run: |
         ./rexglue init --project-name pacman_colors --xex-path default.xex --game-root ./ --project-root ./pacman_project
 
-    # ETAPA 3: Faz a engenharia reversa e cospe o jogo transformado em C++ portátil
-    - name: Executar Engenharia Reversa (.XEX para C++)
+    # 3. Faz a traducao magica do binario de Xbox 360 para codigo C++ portavel
+    - name: Traduzir Lógica do Jogo (.XEX para C++)
       run: |
         cd pacman_project
         ../rexglue codegen
-        echo "Sucesso! O cérebro do Xbox 360 virou código legível por humanos."
 
-    # ETAPA 4: Guarda todo o código fonte traduzido em um arquivo zip para você
-    - name: Disponibilizar Codigo Fonte Traduzido
+    # 4. Compila o codigo C++ gerado mirando na GPU Adreno 730 e CPU ARM64 do seu Edge 30 Pro
+    - name: Compilar APK Nativo ARM64 (Vulkan)
+      run: |
+        cd pacman_project
+        mkdir -p build_android && cd build_android
+        # ANDROID_ABI=arm64-v8a foca no processador do seu Motorola
+        # ANDROID_PLATFORM=android-31 foca no Android 12/13/14 moderno do aparelho
+        cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake \
+              -DANDROID_ABI=arm64-v8a \
+              -DANDROID_PLATFORM=android-31 \
+              -DANDROID_STL=c++_static \
+              -DUSE_VULKAN=ON ..
+        make
+
+    # 5. Entrega o arquivo pronto para voce instalar
+    - name: Entregar Aplicativo Pronto (.APK)
       uses: actions/upload-artifact@v4
       with:
-        name: pacman-codigo-cplusplus
-        path: pacman_project/
+        name: pacman-edge30pro-vulkan
+        path: pacman_project/build_android/outputs/
+        
