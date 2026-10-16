@@ -1,26 +1,25 @@
 name: Recompilar Pacman Colors Xbox 360
 
 on:
-  workflow_dispatch: # Inicia pelo botao no celular
+  workflow_dispatch: # Ativa o botao manual no celular
 
 jobs:
-  build-android:
+  traduzir-xex:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Clonar Repositorio
+    - name: Clonar Repositorio do Pacman
       uses: actions/checkout@v4
       with:
         submodules: recursive
 
-    - name: Instalar Dependencias Linux
+    - name: Instalar Dependencias do Linux
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential cmake ninja-build clang libtinfo-dev zlib1g-dev \
-          libx11-dev libx11-xcb-dev libxcb-randr0-dev libxcb-image0-dev
+        sudo apt-get install -y build-essential cmake ninja-build clang libtinfo-dev zlib1g-dev
 
-    # Mantendo o foco exclusivo no nucleo do tradutor, ignorando janelas de Desktop
-    - name: Compilar o Toolkit do ReXGlue
+    # ETAPA 1: Compila a ferramenta do ReXGlue usando o Clang obrigatorio
+    - name: Compilar o Tradutor ReXGlue
       run: |
         mkdir -p build_sdk && cd build_sdk
         cmake -DCMAKE_BUILD_TYPE=Release \
@@ -32,29 +31,21 @@ jobs:
         mv bin/rexglue ../
         cd ..
 
+    # ETAPA 2: Inicializa as pastas lógicas para o Pacman
     - name: Inicializar Projeto do Jogo
       run: |
         ./rexglue init --project-name pacman_colors --xex-path default.xex --game-root ./ --project-root ./pacman_project
 
-    - name: Traduzir Executavel (.XEX para C++)
+    # ETAPA 3: Faz a engenharia reversa e cospe o jogo transformado em C++ portátil
+    - name: Executar Engenharia Reversa (.XEX para C++)
       run: |
         cd pacman_project
         ../rexglue codegen
-        echo "Codigo de Xbox 360 traduzido com sucesso!"
+        echo "Sucesso! O cérebro do Xbox 360 virou código legível por humanos."
 
-    - name: Compilar APK Android
-      run: |
-        cd pacman_project
-        mkdir -p build_android && cd build_android
-        cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake \
-              -DANDROID_ABI=arm64-v8a \
-              -DANDROID_PLATFORM=android-26 \
-              ..
-        make
-
-    - name: Upload do APK Pronto
+    # ETAPA 4: Guarda todo o código fonte traduzido em um arquivo zip para você
+    - name: Disponibilizar Codigo Fonte Traduzido
       uses: actions/upload-artifact@v4
       with:
-        name: pacman-colors-android
-        path: pacman_project/build_android/outputs/
-        
+        name: pacman-codigo-cplusplus
+        path: pacman_project/
