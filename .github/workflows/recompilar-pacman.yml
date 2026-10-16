@@ -20,14 +20,13 @@ jobs:
 
     - name: Traduzir Executavel (.XEX para C++)
       run: |
-        # Executa o codegen do ReXGlue usando o arquivo enviado
-        python3 roteiros/codegen.py --input default.xex --output src/codegen_out/
+        # Usando o caminho original correto em ingles exigido pelo sistema
+        python3 scripts/codegen.py --input default.xex --output src/codegen_out/
         echo "Codigo de Xbox 360 traduzido com sucesso!"
 
     - name: Compilar APK Android
       run: |
         mkdir -p build && cd build
-        # ANDROID_NDK_LATEST_HOME e a variavel nativa interna do GitHub Actions
         cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake \
               -DANDROID_ABI=arm64-v8a \
               -DANDROID_PLATFORM=android-26 \
@@ -39,3 +38,4 @@ jobs:
       with:
         name: pacman-colors-android
         path: build/outputs/
+        
