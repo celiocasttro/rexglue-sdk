@@ -16,16 +16,19 @@ jobs:
     - name: Instalar Dependencias Linux
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential cmake ninja-build clang
+        sudo apt-get install -y build-essential cmake ninja-build clang libtinfo-dev zlib1g-dev \
+          libx11-dev libx11-xcb-dev libxcb-randr0-dev libxcb-image0-dev libxcb-intro0-dev libxcb-errors-dev
 
-    # CORREÇÃO CRÍTICA: Forçando o CMake a usar o compilador Clang exigido pelo ReXGlue
+    # CONFIGURAÇÃO ULTRA ESTÁVEL: Força o uso do Clang e desliga ferramentas de tela de computador
     - name: Compilar o Toolkit do ReXGlue
       run: |
         mkdir -p build_sdk && cd build_sdk
         cmake -DCMAKE_BUILD_TYPE=Release \
               -DCMAKE_C_COMPILER=clang \
-              -DCMAKE_CXX_COMPILER=clang++ ..
-        cmake --build . --target rexglue
+              -DCMAKE_CXX_COMPILER=clang++ \
+              -DZLIB_USE_STATIC_LIBS=ON \
+              -DREXGLUE_BUILD_TOOLS=OFF ..
+        cmake --build . --target rexglue --parallel $(nproc)
         mv bin/rexglue ../
         cd ..
 
@@ -54,4 +57,3 @@ jobs:
       with:
         name: pacman-colors-android
         path: pacman_project/build_android/outputs/
-        
