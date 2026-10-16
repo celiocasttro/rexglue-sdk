@@ -18,9 +18,13 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Configurar Android NDK
-      uses: android-actions/setup-android@v3
-      
+    # CORREÇÃO CRÍTICA: Usando o configurador oficial nativo do Android SDK/NDK
+    - name: Configurar Android SDK e NDK Oficial
+      uses: maxim-lobanov/setup-android@v1
+      with:
+        api-level: 29
+        ndk-version: 25.2.9519653
+
     - name: Traduzir Executavel (.XEX para C++)
       run: |
         python3 roteiros/codegen.py --input default.xex --output src/codegen_out/
@@ -28,8 +32,8 @@ jobs:
 
     - name: Compilar APK Android
       run: |
-        cd cmake
-        cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake \
+        mkdir -p build && cd build
+        cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
               -DANDROID_ABI=arm64-v8a \
               -DANDROID_PLATFORM=android-26 \
               ..
