@@ -17,9 +17,9 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential cmake ninja-build clang libtinfo-dev zlib1g-dev \
-          libx11-dev libx11-xcb-dev libxcb-randr0-dev libxcb-image0-dev libxcb-intro0-dev libxcb-errors-dev
+          libx11-dev libx11-xcb-dev libxcb-randr0-dev libxcb-image0-dev
 
-    # CONFIGURAÇÃO ULTRA ESTÁVEL: Força o uso do Clang e desliga ferramentas de tela de computador
+    # Mantendo o foco exclusivo no nucleo do tradutor, ignorando janelas de Desktop
     - name: Compilar o Toolkit do ReXGlue
       run: |
         mkdir -p build_sdk && cd build_sdk
@@ -57,3 +57,4 @@ jobs:
       with:
         name: pacman-colors-android
         path: pacman_project/build_android/outputs/
+        
