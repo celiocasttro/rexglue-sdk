@@ -18,29 +18,27 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y build-essential cmake ninja-build clang
 
-    # 1. PASSO ESSENCIAL: Compilar o próprio toolkit do ReXGlue em C++
+    # CORREÇÃO CRÍTICA: Forçando o CMake a usar o compilador Clang exigido pelo ReXGlue
     - name: Compilar o Toolkit do ReXGlue
       run: |
         mkdir -p build_sdk && cd build_sdk
-        cmake -DCMAKE_BUILD_TYPE=Release ..
+        cmake -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_C_COMPILER=clang \
+              -DCMAKE_CXX_COMPILER=clang++ ..
         cmake --build . --target rexglue
-        # Move o executavel gerado para facilitar o acesso
         mv bin/rexglue ../
         cd ..
 
-    # 2. Inicializar o projeto para o Pacman criando o arquivo de configuracao inicial
     - name: Inicializar Projeto do Jogo
       run: |
         ./rexglue init --project-name pacman_colors --xex-path default.xex --game-root ./ --project-root ./pacman_project
 
-    # 3. Rodar o motor do Codegen oficial para converter o default.xex do Pacman em C++
     - name: Traduzir Executavel (.XEX para C++)
       run: |
         cd pacman_project
         ../rexglue codegen
         echo "Codigo de Xbox 360 traduzido com sucesso!"
 
-    # 4. Compilar o resultado gerado usando o NDK nativo do Android
     - name: Compilar APK Android
       run: |
         cd pacman_project
@@ -56,3 +54,4 @@ jobs:
       with:
         name: pacman-colors-android
         path: pacman_project/build_android/outputs/
+        
