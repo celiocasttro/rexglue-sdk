@@ -1,14 +1,17 @@
-name: Recompilar Pac-Man para Android
+name: ReXGlue - Compilar SDK
 
 on:
 workflow_dispatch:
+push:
+branches:
+- main
 
 permissions:
 contents: read
 
 jobs:
-diagnostico:
-name: Verificar projeto ReXGlue
+build-linux:
+name: Compilar ReXGlue para Linux
 runs-on: ubuntu-latest
 
 steps:
@@ -16,60 +19,56 @@ steps:
     uses: actions/checkout@v4
     with:
       submodules: recursive
-  - name: Instalar ferramentas
+  - name: Instalar dependencias
     run: |
       sudo apt-get update
-      sudo apt-get install -y cmake ninja-build clang lld git python3
-  - name: Configurar Java
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: '17'
-  - name: Configurar Android SDK
-    uses: android-actions/setup-android@v3
+      sudo apt-get install -y \
+        cmake \
+        ninja-build \
+        clang \
+        lld \
+        git \
+        python3 \
+        pkg-config \
+        libxcursor-dev \
+        libx11-dev \
+        libxext-dev \
+        libxrender-dev \
+        libxi-dev \
+        libxfixes-dev \
+        libxrandr-dev \
+        libxss-dev \
+        libxtst-dev \
+        libwayland-dev \
+        libxkbcommon-dev \
+        libegl1-mesa-dev \
+        libgl1-mesa-dev \
+        libvulkan-dev \
+        libasound2-dev \
+        libpulse-dev \
+        libudev-dev
   - name: Verificar ferramentas
     run: |
-      echo "=== CMake ==="
       cmake --version
-      echo "=== Ninja ==="
       ninja --version
-      echo "=== Clang ==="
       clang --version
-      echo "=== Java ==="
-      java -version
-      echo "=== Android SDK ==="
-      echo "ANDROID_HOME=$ANDROID_HOME"
-      echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
-  - name: Verificar arquivos do projeto
+  - name: Configurar projeto
     run: |
-      echo "=== Arquivo principal ==="
-      test -f CMakeLists.txt && echo "CMakeLists.txt encontrado"
-      echo "=== Executaveis Xbox 360 ==="
-      find . -type f -iname '*.xex' -print
-      echo "=== Manifestos ReXGlue ==="
-      find . -type f -iname '*manifest*.toml' -print
-      echo "=== Scripts Python ==="
-      find . -type f -name '*.py' -print
-      echo "=== Configuracao Android ==="
-      find . -type f \( -name 'Android.mk' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print
-  - name: Verificar presets CMake
+      cmake --preset linux-amd64 \
+        -DSDL_X11_XCURSOR=OFF
+  - name: Compilar SDK
     run: |
-      if [ -f CMakePresets.json ]; then
-        python3 -c '
-      import json
-      with open("CMakePresets.json", encoding="utf-8") as f:
-          data = json.load(f)
-      print("Presets encontrados:")
-      for preset in data.get("configurePresets", []):
-          print("-", preset.get("name", "(sem nome)"))
-      '
-      else
-        echo "CMakePresets.json nao encontrado"
-      fi
-  - name: Resultado
-    if: always()
+      cmake --build --preset linux-amd64 --parallel 2
+  - name: Localizar arquivos compilados
+    if: success()
     run: |
-      echo "Diagnostico finalizado."
-      echo "Este workflow verifica os arquivos e as ferramentas."
-      echo "Ele ainda nao gera um APK."
-      echo "A recompilacao exige adaptar o ReXGlue para Android e ter os arquivos originais do jogo."
+      echo "Arquivos gerados:"
+      find out -type f -executable -print || true
+  - name: Salvar arquivos compilados
+    if: success()
+    uses: actions/upload-artifact@v4
+    with:
+      name: rexglue-linux-amd64
+      path: out/
+      if-no-files-found: error
+      retention-days: 7
