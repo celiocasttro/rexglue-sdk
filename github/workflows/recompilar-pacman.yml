@@ -1,74 +1,73 @@
-name: ReXGlue - Compilar SDK
-
+name: ReXGlue - Compilar Android
 on:
-workflow_dispatch:
-push:
-branches:
-- main
-
+  workflow_dispatch:
+  push:
+    branches:
+      - main
 permissions:
-contents: read
-
+  contents: read
 jobs:
-build-linux:
-name: Compilar ReXGlue para Linux
-runs-on: ubuntu-latest
-
-steps:
-  - name: Baixar repositorio
-    uses: actions/checkout@v4
-    with:
-      submodules: recursive
-  - name: Instalar dependencias
-    run: |
-      sudo apt-get update
-      sudo apt-get install -y \
-        cmake \
-        ninja-build \
-        clang \
-        lld \
-        git \
-        python3 \
-        pkg-config \
-        libxcursor-dev \
-        libx11-dev \
-        libxext-dev \
-        libxrender-dev \
-        libxi-dev \
-        libxfixes-dev \
-        libxrandr-dev \
-        libxss-dev \
-        libxtst-dev \
-        libwayland-dev \
-        libxkbcommon-dev \
-        libegl1-mesa-dev \
-        libgl1-mesa-dev \
-        libvulkan-dev \
-        libasound2-dev \
-        libpulse-dev \
-        libudev-dev
-  - name: Verificar ferramentas
-    run: |
-      cmake --version
-      ninja --version
-      clang --version
-  - name: Configurar projeto
-    run: |
-      cmake --preset linux-amd64 \
-        -DSDL_X11_XCURSOR=OFF
-  - name: Compilar SDK
-    run: |
-      cmake --build --preset linux-amd64 --parallel 2
-  - name: Localizar arquivos compilados
-    if: success()
-    run: |
-      echo "Arquivos gerados:"
-      find out -type f -executable -print || true
-  - name: Salvar arquivos compilados
-    if: success()
-    uses: actions/upload-artifact@v4
-    with:
-      name: rexglue-linux-amd64
-      path: out/
-      if-no-files-found: error
-      retention-days: 7
+  build-android:
+    name: Compilar ReXGlue para Android ARM64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar repositorio
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Instalar ferramentas
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            ninja-build \
+            clang \
+            lld \
+            git \
+            python3 \
+            pkg-config
+      - name: Configurar Android NDK
+        run: |
+          echo "ANDROID_NDK_ROOT=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+          echo "$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
+      - name: Verificar ferramentas
+        run: |
+          cmake --version
+          ninja --version
+          test -d "$ANDROID_NDK_ROOT"
+          echo "Android NDK: $ANDROID_NDK_ROOT"
+      - name: Configurar projeto Android ARM64
+        run: |
+          cmake -S . -B build/android-arm64 -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-26 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_STANDARD=23 \
+            -DREXGLUE_BUILD_TESTS=OFF \
+            -DREXGLUE_ENABLE_TRACY=OFF \
+            -DREXGLUE_ENABLE_FIDELITYFX=OFF \
+            -DREXGLUE_USE_D3D12=OFF \
+            -DREXGLUE_USE_VULKAN=ON
+      - name: Compilar SDK Android
+        run: |
+          cmake --build build/android-arm64 --parallel 2
+      - name: Procurar arquivos compilados
+        if: success()
+        run: |
+          echo "Arquivos gerados:"
+          find out -type f -print || true
+          find build/android-arm64 -type f \
+            \( -name "*.so" -o -name "*.a" -o -name "*.elf" \) \
+            -print || true
+      - name: Salvar arquivos compilados
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rexglue-android-arm64
+          path: |
+            out/
+            build/android-arm64/
+          if-no-files-found: error
+          retention-days: 7
