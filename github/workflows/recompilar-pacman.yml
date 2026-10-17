@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build-android:
-    name: Gerar e Compilar Jogo para Android ARM64
+    name: Gerar e Compilar Pac-Man Colors para Android
     runs-on: ubuntu-latest
 
     steps:
@@ -33,22 +33,25 @@ jobs:
 
       - name: 1. Compilar ferramenta Host (ReXGlue CLI)
         run: |
-          # O gerador precisa rodar no Linux x86_64 do runner
           cmake -B build-host -G "Ninja" -DCMAKE_BUILD_TYPE=Release
           cmake --build build-host --config Release
 
-      - name: 2. Gerar código C++ a partir do default.xex
+      - name: 2. Inicializar Projeto e Gerar Código a partir do XEX
         run: |
           if [ ! -f "default.xex" ]; then
             echo "::error::Arquivo default.xex nao encontrado na raiz do repositorio!"
             exit 1
           }
 
-          mkdir -p game_output
-          # Executa o gerador do ReXGlue sobre o XEX do Pac-Man Colors
-          # (Ajuste os argumentos caso a versão atual do CLI exija flags específicas)
-          ./build-host/bin/rexglue init --project-name "PacManColors" --xex-path "default.xex" --project-root "game_output" || true
-          ./build-host/bin/rexglue codegen --project "game_output" || true
+          mkdir -p game_project
+          # Inicializa o projeto do jogo usando a CLI oficial do ReXGlue
+          ./build-host/bin/rexglue init --app_name "pacmancolors" --app_root "game_project"
+          
+          # Ajusta o caminho do binário no arquivo TOML gerado para apontar para o default.xex da raiz
+          sed -i 's|file_path =.*|file_path = "../default.xex"|g' game_project/*_config.toml || true
+
+          # Executa a geração de código estático (usando --force caso haja avisos de símbolos não resolvidos)
+          ./build-host/bin/rexglue codegen --project "game_project" --force || true
 
       - name: Setup Java (Necessário para o Android SDK)
         uses: actions/setup-java@v4
@@ -59,19 +62,10 @@ jobs:
       - name: Configurar Android SDK e NDK
         uses: android-actions/setup-android@v3
 
-      - name: Verificar ambiente Android NDK
+      - name: 3. Configurar e Compilar para Android ARM64
         run: |
-          set -e
-          echo "Android NDK Home: $ANDROID_SDK_ROOT"
-          test -f "$ANDROID_SDK_ROOT/ndk-bundle/build/cmake/android.toolchain.cmake" || test -d "$ANDROID_SDK_ROOT/ndk"
-
-      - name: 3. Configurar projeto Android ARM64
-        run: |
-          # Localiza automaticamente o caminho do NDK configurado pela action
           NDK_PATH=$(find $ANDROID_SDK_ROOT -name "android.toolchain.cmake" -exec dirname {} \; | head -n 1)
           NDK_PATH=$(dirname $(dirname $NDK_PATH))
-          
-          echo "Utilizando NDK em: $NDK_PATH"
 
           cmake -S . -B build/android-arm64 -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$NDK_PATH/build/cmake/android.toolchain.cmake" \
@@ -80,24 +74,18 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_CXX_STANDARD=23 \
             -DREXGLUE_BUILD_TESTS=OFF \
-            -DREXGLUE_ENABLE_TRACY=OFF \
-            -DREXGLUE_ENABLE_FIDELITYFX=OFF \
-            -DREXGLUE_USE_D3D12=OFF \
             -DREXGLUE_USE_VULKAN=ON
 
-      - name: 4. Compilar SDK e Jogo para Android
-        run: |
-          set -e
           cmake --build build/android-arm64 --parallel 2
 
-      - name: Salvar arquivos compilados e código gerado
+      - name: 4. Salvar Artefatos e Código Gerado
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rexglue-android-arm64-artifacts
+          name: pacman-colors-android-artifacts
           path: |
+            game_project/generated/
             build/android-arm64/**/*.so
             build/android-arm64/**/*.a
-            game_output/
           if-no-files-found: warn
           retention-days: 7
