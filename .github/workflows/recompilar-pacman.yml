@@ -1,4 +1,4 @@
-
+```yaml
 name: Recompilar Pac-Man para Android
 
 on:
@@ -20,14 +20,11 @@ jobs:
 
       - name: Instalar dependencias
         run: |
+          set -e
           sudo apt-get update
-          sudo apt-get install -y wget ca-certificates
-
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 21
-
           sudo apt-get install -y \
+            wget \
+            ca-certificates \
             build-essential \
             cmake \
             ninja-build \
@@ -37,71 +34,67 @@ jobs:
             unzip \
             zip
 
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+
       - name: Verificar ambiente
         run: |
-          echo "=== CMake ==="
+          set -e
+
           cmake --version
-
-          echo "=== Ninja ==="
           ninja --version
-
-          echo "=== Clang 21 ==="
           clang-21 --version
           clang++-21 --version
 
-          echo "=== Verificar arquivos obrigatorios ==="
           test -f CMakeLists.txt
           test -f CMakePresets.json
           test -f default.xex
 
           echo "default.xex encontrado."
-
-          echo "=== Presets disponiveis ==="
           cmake --list-presets
 
       - name: Configurar SDK ReXGlue
         run: |
+          set -e
+
           cmake --preset linux-amd64 \
             -DCMAKE_C_COMPILER=clang-21 \
             -DCMAKE_CXX_COMPILER=clang++-21
 
-      - name: Compilar e instalar SDK ReXGlue
+      - name: Compilar SDK ReXGlue
         run: |
+          set -e
+
           cmake --build \
             --preset linux-amd64-release \
-            --target install
+            --parallel 2
 
       - name: Localizar executavel ReXGlue
         run: |
-          echo "=== Procurando o executavel ==="
+          set -e
 
-          find out -type f -name rexglue \
-            -perm /111 -print || true
+          REXGLUE_REL="$(find out -type f \
+            -name rexglue \
+            -perm /111 \
+            -print -quit 2>/dev/null || true)"
 
-          if [ -x "out/linux-amd64/Release/rexglue" ]; then
-            REXGLUE_BIN="$GITHUB_WORKSPACE/out/linux-amd64/Release/rexglue"
-          elif [ -x "out/linux-amd64/rexglue" ]; then
-            REXGLUE_BIN="$GITHUB_WORKSPACE/out/linux-amd64/rexglue"
-          else
-            REXGLUE_REL="$(find out -type f \
-              -name rexglue -perm /111 \
-              -print -quit 2>/dev/null || true)"
-
-            if [ -z "$REXGLUE_REL" ]; then
-              echo "::error::Executavel rexglue nao encontrado."
-              exit 1
-            fi
-
-            REXGLUE_BIN="$GITHUB_WORKSPACE/$REXGLUE_REL"
+          if [ -z "$REXGLUE_REL" ]; then
+            echo "::error::Executavel rexglue nao encontrado."
+            exit 1
           fi
+
+          REXGLUE_BIN="$GITHUB_WORKSPACE/$REXGLUE_REL"
 
           echo "REXGLUE_BIN=$REXGLUE_BIN" >> "$GITHUB_ENV"
 
-          echo "=== Versao e ajuda do ReXGlue ==="
+          echo "Executavel encontrado: $REXGLUE_BIN"
           "$REXGLUE_BIN" --help
 
       - name: Inicializar projeto Pac-Man
         run: |
+          set -e
+
           mkdir -p pacman_project
 
           "$REXGLUE_BIN" init \
@@ -112,40 +105,60 @@ jobs:
 
       - name: Verificar arquivos gerados
         run: |
+          set -e
+
           echo "=== Arquivos do projeto ==="
           find pacman_project -maxdepth 4 -type f -print | sort
 
-          echo "=== Arquivos TOML ==="
-          find pacman_project -type f -name '*.toml' -print
-
-      - name: Gerar codigo do Pac-Man
-        working-directory: pacman_project
-        run: |
-          CONFIG="$(find . -type f -name '*.toml' \
-            ! -path './build*/*' -print -quit)"
+          CONFIG="$(find pacman_project \
+            -type f -name '*.toml' \
+            -print -quit)"
 
           if [ -z "$CONFIG" ]; then
             echo "::error::Nenhum arquivo TOML encontrado."
             exit 1
           fi
 
-          echo "Configuracao encontrada: $CONFIG"
-          "$REXGLUE_BIN" codegen "$CONFIG"
+          echo "REXGLUE_CONFIG=$GITHUB_WORKSPACE/$CONFIG" \
+            >> "$GITHUB_ENV"
 
-      - name: Verificar Android NDK
+      - name: Gerar codigo do Pac-Man
         run: |
-          if [ -z "$ANDROID_NDK_LATEST_HOME" ]; then
-            echo "::error::ANDROID_NDK_LATEST_HOME nao esta definido."
+          set -e
+
+          "$REXGLUE_BIN" codegen "$REXGLUE_CONFIG"
+
+          echo "Geracao de codigo concluida."
+
+      - name: Localizar Android NDK
+        run: |
+          set -e
+
+          NDK="${ANDROID_NDK_LATEST_HOME:-}"
+
+          if [ -z "$NDK" ] || \
+             [ ! -f "$NDK/build/cmake/android.toolchain.cmake" ]; then
+            NDK="${ANDROID_NDK_HOME:-}"
+          fi
+
+          if [ -z "$NDK" ] || \
+             [ ! -f "$NDK/build/cmake/android.toolchain.cmake" ]; then
+            NDK="${ANDROID_NDK_ROOT:-}"
+          fi
+
+          if [ -z "$NDK" ] || \
+             [ ! -f "$NDK/build/cmake/android.toolchain.cmake" ]; then
+            echo "::error::Android NDK nao encontrado."
             exit 1
           fi
 
-          test -f \
-            "$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake"
+          echo "ANDROID_NDK_ROOT=$NDK" >> "$GITHUB_ENV"
+          echo "Android NDK encontrado: $NDK"
 
-          echo "Android NDK encontrado."
-
-      - name: Verificar configuracao Android do projeto
+      - name: Verificar configuracao Android
         run: |
+          set -e
+
           if [ ! -f pacman_project/CMakeLists.txt ]; then
             echo "::error::CMakeLists.txt do projeto nao encontrado."
             exit 1
@@ -154,7 +167,8 @@ jobs:
           echo "=== CMakeLists.txt do projeto ==="
           cat pacman_project/CMakeLists.txt
 
-          echo "=== Referencias a Android e Vulkan ==="
+          echo "=== Referencias Android e Vulkan ==="
+
           grep -R -n -i \
             'vulkan\|ANDROID_ABI\|android.toolchain' \
             pacman_project \
@@ -172,4 +186,4 @@ jobs:
             out/
           if-no-files-found: ignore
           retention-days: 7
-          
+```
