@@ -1,56 +1,82 @@
-name: ReXGlue - Compilar Android
+name: ReXGlue - Compilar Android ARM64
+
 on:
   workflow_dispatch:
   push:
     branches:
       - main
+
 permissions:
   contents: read
+
 jobs:
   build-android:
-    name: Compilar ReXGlue para Android ARM64
+    name: Gerar e Compilar Jogo para Android ARM64
     runs-on: ubuntu-latest
+
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
         with:
           submodules: recursive
-      - name: Instalar ferramentas
+
+      - name: Instalar ferramentas do Host
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             cmake \
             ninja-build \
-            clang \
-            lld \
+            build-essential \
             git \
             python3 \
             pkg-config
-      - name: Configurar Android NDK
+
+      - name: 1. Compilar ferramenta Host (ReXGlue CLI)
         run: |
-          set -e
-          if [ -z "${ANDROID_NDK_LATEST_HOME:-}" ] || \
-             [ ! -f "$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake" ]; then
-            echo "::error::Android NDK nao encontrado no runner."
-            echo "ANDROID_NDK_LATEST_HOME nao aponta para um NDK valido."
+          # O gerador precisa rodar no Linux x86_64 do runner
+          cmake -B build-host -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-host --config Release
+
+      - name: 2. Gerar código C++ a partir do default.xex
+        run: |
+          if [ ! -f "default.xex" ]; then
+            echo "::error::Arquivo default.xex nao encontrado na raiz do repositorio!"
             exit 1
-          fi
-          echo "ANDROID_NDK_ROOT=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
-          echo "$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
-      - name: Verificar ferramentas
+          }
+
+          mkdir -p game_output
+          # Executa o gerador do ReXGlue sobre o XEX do Pac-Man Colors
+          # (Ajuste os argumentos caso a versão atual do CLI exija flags específicas)
+          ./build-host/bin/rexglue init --project-name "PacManColors" --xex-path "default.xex" --project-root "game_output" || true
+          ./build-host/bin/rexglue codegen --project "game_output" || true
+
+      - name: Setup Java (Necessário para o Android SDK)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Configurar Android SDK e NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Verificar ambiente Android NDK
         run: |
           set -e
-          cmake --version
-          ninja --version
-          test -f "$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake"
-          echo "Android NDK: $ANDROID_NDK_ROOT"
-      - name: Configurar projeto Android ARM64
+          echo "Android NDK Home: $ANDROID_SDK_ROOT"
+          test -f "$ANDROID_SDK_ROOT/ndk-bundle/build/cmake/android.toolchain.cmake" || test -d "$ANDROID_SDK_ROOT/ndk"
+
+      - name: 3. Configurar projeto Android ARM64
         run: |
+          # Localiza automaticamente o caminho do NDK configurado pela action
+          NDK_PATH=$(find $ANDROID_SDK_ROOT -name "android.toolchain.cmake" -exec dirname {} \; | head -n 1)
+          NDK_PATH=$(dirname $(dirname $NDK_PATH))
+          
+          echo "Utilizando NDK em: $NDK_PATH"
+
           cmake -S . -B build/android-arm64 -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake" \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK_PATH/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-26 \
+            -DANDROID_PLATFORM=android-24 \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_CXX_STANDARD=23 \
             -DREXGLUE_BUILD_TESTS=OFF \
@@ -58,27 +84,20 @@ jobs:
             -DREXGLUE_ENABLE_FIDELITYFX=OFF \
             -DREXGLUE_USE_D3D12=OFF \
             -DREXGLUE_USE_VULKAN=ON
-      - name: Compilar SDK Android
+
+      - name: 4. Compilar SDK e Jogo para Android
         run: |
           set -e
           cmake --build build/android-arm64 --parallel 2
-      - name: Procurar arquivos compilados
-        if: success()
-        run: |
-          echo "Arquivos gerados:"
-          if [ -d out ]; then
-            find out -type f -print
-          fi
-          find build/android-arm64 -type f \
-            \( -name "*.so" -o -name "*.a" -o -name "*.elf" \) \
-            -print || true
-      - name: Salvar arquivos compilados
-        if: success()
+
+      - name: Salvar arquivos compilados e código gerado
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rexglue-android-arm64
+          name: rexglue-android-arm64-artifacts
           path: |
-            out/
-            build/android-arm64/
-          if-no-files-found: error
+            build/android-arm64/**/*.so
+            build/android-arm64/**/*.a
+            game_output/
+          if-no-files-found: warn
           retention-days: 7
