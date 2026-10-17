@@ -28,14 +28,22 @@ jobs:
             pkg-config
       - name: Configurar Android NDK
         run: |
+          set -e
+          if [ -z "${ANDROID_NDK_LATEST_HOME:-}" ] || \
+             [ ! -f "$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake" ]; then
+            echo "::error::Android NDK nao encontrado no runner."
+            echo "ANDROID_NDK_LATEST_HOME nao aponta para um NDK valido."
+            exit 1
+          fi
           echo "ANDROID_NDK_ROOT=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
           echo "$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
       - name: Verificar ferramentas
         run: |
+          set -e
           cmake --version
           ninja --version
-          test -d "$ANDROID_NDK_ROOT"
+          test -f "$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake"
           echo "Android NDK: $ANDROID_NDK_ROOT"
       - name: Configurar projeto Android ARM64
         run: |
@@ -52,12 +60,15 @@ jobs:
             -DREXGLUE_USE_VULKAN=ON
       - name: Compilar SDK Android
         run: |
+          set -e
           cmake --build build/android-arm64 --parallel 2
       - name: Procurar arquivos compilados
         if: success()
         run: |
           echo "Arquivos gerados:"
-          find out -type f -print || true
+          if [ -d out ]; then
+            find out -type f -print
+          fi
           find build/android-arm64 -type f \
             \( -name "*.so" -o -name "*.a" -o -name "*.elf" \) \
             -print || true
