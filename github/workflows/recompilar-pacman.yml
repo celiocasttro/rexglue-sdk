@@ -41,16 +41,13 @@ jobs:
           if [ ! -f "default.xex" ]; then
             echo "::error::Arquivo default.xex nao encontrado na raiz do repositorio!"
             exit 1
-          }
+          fi
 
           mkdir -p game_project
-          # Inicializa o projeto do jogo usando a CLI oficial do ReXGlue
           ./build-host/bin/rexglue init --app_name "pacmancolors" --app_root "game_project"
           
-          # Ajusta o caminho do binário no arquivo TOML gerado para apontar para o default.xex da raiz
           sed -i 's|file_path =.*|file_path = "../default.xex"|g' game_project/*_config.toml || true
 
-          # Executa a geração de código estático (usando --force caso haja avisos de símbolos não resolvidos)
           ./build-host/bin/rexglue codegen --project "game_project" --force || true
 
       - name: Setup Java (Necessário para o Android SDK)
@@ -89,4 +86,3 @@ jobs:
             build/android-arm64/**/*.a
           if-no-files-found: warn
           retention-days: 7
-          
