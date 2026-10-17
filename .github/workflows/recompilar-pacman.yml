@@ -1,4 +1,3 @@
-```yaml
 name: Recompilar Pac-Man para Android
 
 on:
@@ -155,35 +154,49 @@ jobs:
           echo "ANDROID_NDK_ROOT=$NDK" >> "$GITHUB_ENV"
           echo "Android NDK encontrado: $NDK"
 
-      - name: Verificar configuracao Android
+      - name: Setup Java (Necessario para Gradle/APK)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Compilar Jogo e Runtime para Android ARM64
         run: |
           set -e
 
-          if [ ! -f pacman_project/CMakeLists.txt ]; then
-            echo "::error::CMakeLists.txt do projeto nao encontrado."
-            exit 1
+          # Configura o CMake utilizando o Toolchain do Android NDK para arm64-v8a
+          cmake -S pacman_project -B pacman_project/build-android -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DREXGLUE_USE_VULKAN=ON
+
+          cmake --build pacman_project/build-android --parallel 2
+
+      - name: Compilar APK via Gradle (se estrutura Android existir)
+        run: |
+          set -e
+          if [ -d "pacman_project/android" ]; then
+            cd pacman_project/android
+            chmod +x gradlew
+            ./gradlew assembleRelease
+          else
+            echo "Nota: A estrutura Gradle nao foi gerada automaticamente pelo init. As bibliotecas compiladas (.so) foram geradas em build-android."
           fi
 
-          echo "=== CMakeLists.txt do projeto ==="
-          cat pacman_project/CMakeLists.txt
-
-          echo "=== Referencias Android e Vulkan ==="
-
-          grep -R -n -i \
-            'vulkan\|ANDROID_ABI\|android.toolchain' \
-            pacman_project \
-            --include='CMakeLists.txt' \
-            --include='*.cmake' \
-            --include='*.mk' || true
-
-      - name: Salvar diagnosticos
+      - name: Salvar artefatos finais (APK e Codigo Gerado)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: diagnostico-pacman
+          name: pacman-android-artifacts
           path: |
-            pacman_project/
-            out/
+            pacman_project/build-android/**/*.so
+            pacman_project/build-android/**/*.a
+            pacman_project/android/app/build/outputs/apk/release/*.apk
+            pacman_project/generated/
           if-no-files-found: ignore
           retention-days: 7
-```
